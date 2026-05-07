@@ -1,0 +1,18 @@
+{
+  "_comment": "VizR 사용자 설정 파일 - 아래 경로를 본인의 데이터 저장 경로로 변경하세요",
+  "vizr_path": "/data2/vizr",
+  "environment": "development",
+  "log_level": "INFO",
+  "ports": {
+    "backend": 5001,
+    "frontend": 5173
+  },
+  "ui": {
+    "theme": "light",
+    "language": "ko"
+  },
+  "pipeline": {
+    "max_workers": 2,
+    "timeout": 3600
+  }
+}

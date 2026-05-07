@@ -1,0 +1,25 @@
+{
+  "name": "TAIR10",
+  "version": "10",
+  "species": "arabidopsis",
+  "organism": "Arabidopsis thaliana",
+  "description": "TAIR10 Reference Genome - Default reference set for Arabidopsis thaliana",
+  "source": "Ensembl Plants",
+  "created_at": "2024-10-21",
+  "is_default": true,
+  "files": {
+    "cdna": "Arabidopsis_thaliana.TAIR10.cdna.all.fa",
+    "genomic": "Arabidopsis_thaliana.TAIR10.dna.toplevel.fa",
+    "annotation": "Arabidopsis_thaliana.TAIR10.58.gtf"
+  },
+  "indexes": {
+    "bowtie2": "indexes/bowtie2",
+    "rsem": "indexes/rsem",
+    "hisat2": "indexes/hisat2"
+  },
+  "statistics": {
+    "cdna_size_mb": 96,
+    "genomic_size_mb": 117,
+    "annotation_size_mb": 261
+  }
+}

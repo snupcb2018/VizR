@@ -1,0 +1,17 @@
+VizR Logo Guide
+================
+
+To add a custom logo to the VizR launcher splash screen:
+
+1. Create or prepare your logo image (PNG format recommended)
+2. Resize image to approximately 150x150 pixels for best results
+3. Name the file: vizr_logo.png
+4. Place the file in this directory (deploy/)
+5. Rebuild VizR.exe using build_exe.bat
+
+The logo will appear in the center of the splash screen when VizR starts.
+
+If no logo file is provided, VizR will display a text-based placeholder instead.
+
+---
+Note: The logo file should be a square image for best appearance.

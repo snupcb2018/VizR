@@ -1,0 +1,31 @@
+Inno Download Plugin (IDP) 설치 가이드
+==========================================
+
+IDP를 사용하면 Inno Setup 설치 프로그램이 인터넷에서 파일을 다운로드할 수 있습니다.
+
+설치 방법:
+1. IDP 다운로드:
+   https://github.com/DomGries/InnoDependencyInstaller/releases
+
+2. 다운로드한 파일:
+   - idp.iss (코어 파일)
+   - idplang 폴더 (언어 파일)
+
+3. 파일 배치:
+   Z:\3. RNASeq\5. VizR\VizR\deploy\
+   ├── VizR.iss
+   ├── idp.iss          ← 여기에 복사
+   └── idplang\         ← 폴더째 복사
+       ├── default.iss
+       ├── english.iss
+       └── ...
+
+4. VizR.iss 수정:
+   - #include "idp.iss" 추가
+   - Docker Desktop 다운로드 URL 추가
+   - 자동 설치 로직 추가
+
+대안: IDP 없이 간단한 방법
+==========================================
+IDP 설치가 복잡하다면, PowerShell을 사용한 간단한 방법도 가능합니다.
+이 경우 VizR.iss에서 PowerShell 스크립트를 호출하여 다운로드합니다.

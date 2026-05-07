@@ -1,0 +1,53 @@
+services:
+  vizr-dev:
+    init: true
+    build: .
+    user: "0:0"  # root 사용자로 변경 (Docker 권한 해결)
+    working_dir: /app
+    privileged: true  # Docker-in-Docker를 위한 privileged 모드
+    entrypoint: []  # 기본 entrypoint 오버라이드
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "5174:5174"  # 개발용 프론트엔드 포트
+      - "5002:5002"  # 개발용 백엔드 포트
+    volumes:
+      - ./:/app                       # VizR 소스 코드 전체
+      - ${VIZR_PATH:-./}:/vizr  # VizR 데이터 디렉토리 (테스터와 공유)
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker 소켓 마운트
+      - vizr_dev_frontend_nm:/app/frontend/node_modules  # 개발용 node_modules (분리)
+      - ${VIZR_PATH:-./}/.tmp:/tmp    # HISAT2 mkfifo 문제 해결용 임시 디렉토리
+    environment:
+      - PATH=/opt/venvs/vizr/bin:$PATH
+      - VIZR_PATH=/vizr
+      - VIZR_WORKBENCH_PATH=/vizr/workbench
+      - VITE_PORT=5174  # 프론트엔드 포트 환경변수
+      - BACKEND_PORT=5002  # 백엔드 포트 환경변수
+      - LOG_FILE=/vizr/log/vizr_dev.log  # 개발용 로그 파일
+    command: >
+      /usr/bin/bash -lc "
+        # Redis 시작 (컨테이너 내부에서, 다른 포트 사용)
+        sudo redis-server --daemonize yes --port 6380 --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+        # Fix permissions for node_modules directory
+        sudo chown -R hjung:hjung /app/frontend/node_modules 2>/dev/null || true
+
+        # Install frontend dependencies if package.json is newer than node_modules
+        if [ ! -f '/app/frontend/node_modules/.bin/vite' ] || [ '/app/frontend/package.json' -nt '/app/frontend/node_modules' ]; then
+          echo 'Installing frontend dependencies...'
+          cd /app/frontend && npm install
+        else
+          echo 'Frontend dependencies already installed, skipping npm install'
+        fi
+
+        # Start services with custom ports
+        cd /app/frontend && npm run dev -- --port 5174 --config vite.config.dev.ts &
+        cd /app && PYTHONPATH=/app USE_REDIS=true REDIS_HOST=localhost REDIS_PORT=6380 FLASK_PORT=5002 LOG_FILE=/vizr/log/vizr_dev.log /opt/venvs/vizr/bin/python3 backend/app.py
+      "
+
+
+volumes:
+  vizr_dev_frontend_nm:
