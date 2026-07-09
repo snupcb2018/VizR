@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Chevron up icon">
+  <defs>
+    <linearGradient id="bg" x1="18%" y1="12%" x2="82%" y2="88%">
+      <stop offset="0%" stop-color="#14B8D4"/>
+      <stop offset="100%" stop-color="#6B46C1"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.6" result="blur"/>
+      <feOffset in="blur" dx="0" dy="0.3" result="offsetBlur"/>
+      <feMerge>
+        <feMergeNode in="offsetBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="64" cy="64" r="42" fill="url(#bg)"/>
+
+  <!-- upper chevron -->
+  <path d="M42 64 L64 42 L86 64"
+        fill="none"
+        stroke="#FFFFFF"
+        stroke-width="8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        filter="url(#soft)"/>
+
+  <!-- lower chevron: same width/length as upper -->
+  <path d="M42 80 L64 58 L86 80"
+        fill="none"
+        stroke="#FFFFFF"
+        stroke-width="8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        filter="url(#soft)"/>
+</svg>

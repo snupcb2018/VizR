@@ -1,0 +1,35 @@
+services:
+  vizr:
+    init: true
+    image: hjung200x/vizr:latest
+    user: "0:0"  # root 사용자로 변경 (Docker 권한 해결)
+    working_dir: /app
+    privileged: true  # Docker-in-Docker를 위한 privileged 모드
+    entrypoint: []  # 기본 entrypoint 오버라이드
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "5173:5173"  # Frontend (development mode only)
+      - "5001:5001"  # Backend (always)
+    volumes:
+      - ${VIZR_PATH:-${USERPROFILE:-$HOME}/VizR_Data}:/vizr  # VizR 데이터 디렉토리 (Windows: $USERPROFILE, Linux: $HOME)
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker 소켓 마운트
+      - ${VIZR_PATH:-${USERPROFILE:-$HOME}/VizR_Data}/.tmp:/tmp    # HISAT2 mkfifo 문제 해결용 임시 디렉토리
+    environment:
+      - PATH=/opt/venvs/vizr/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - VIZR_PATH=/vizr
+      - HOST_VIZR_PATH=${VIZR_PATH:-${USERPROFILE:-$HOME}/VizR_Data}
+      - MODE=${MODE:-production}
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-}
+    command: >
+      /usr/bin/bash /app/start.sh
+    #sysctls:
+    #  - fs.inotify.max_user_watches=524288
+    #  - fs.inotify.max_user_instances=2048
+
+
+volumes:
+  vizr_frontend_nm:

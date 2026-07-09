@@ -1,0 +1,78 @@
+/* Global styles for VizR RNASeq Visualization Tool */
+
+/* Ensure full height for html, body, and root */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Prevent page-level scrolling */
+}
+
+/* Base styles */
+* {
+  box-sizing: border-box;
+}
+
+/* Custom scrollbar styles for consistency */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 8px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: #f1f5f9; /* slate-100 */
+  border-radius: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: #cbd5e1; /* slate-300 */
+  border-radius: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; /* slate-400 */
+}
+
+/* Ensure smooth scrolling */
+.overflow-y-auto {
+  scroll-behavior: smooth;
+}
+
+.scroll-to-top-icon {
+  display: inline-block;
+  width: 150% !important;
+  height: 150% !important;
+  background: center / cover no-repeat url('./src/assets/icons/scroll-to-top.svg');
+  filter: drop-shadow(0 10px 18px rgba(15, 23, 42, 0.28));
+}
+
+.scroll-to-top-button {
+  padding: 2px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: transparent !important;
+  animation: scroll-to-top-bounce 2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.scroll-to-top-button:hover {
+  animation-play-state: paused;
+}
+
+@keyframes scroll-to-top-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  15% {
+    transform: translateY(-4px);
+  }
+  30% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-2px);
+  }
+  60% {
+    transform: translateY(0);
+  }
+}

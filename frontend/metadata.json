@@ -1,0 +1,6 @@
+{
+  "name": "VizR: RNASeq Visualization Tool",
+  "description": "A user-friendly tool to automatically analyze and visualize RNASeq data, from raw files to insightful charts and tables. Designed for researchers to easily manage analysis pipelines and explore results.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}

@@ -1,0 +1,18 @@
+{
+  "_comment": "VizR local configuration template. Copy this file to config.json and update vizr_path for your system.",
+  "vizr_path": "./VizR_Data",
+  "environment": "production",
+  "log_level": "INFO",
+  "ports": {
+    "backend": 5001,
+    "frontend": 5173
+  },
+  "ui": {
+    "theme": "light",
+    "language": "en"
+  },
+  "pipeline": {
+    "max_workers": 2,
+    "timeout": 3600
+  }
+}

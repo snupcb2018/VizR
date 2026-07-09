@@ -1,0 +1,25 @@
+# Shell scripts must use LF line endings
+*.sh text eol=lf
+
+# Python files should use LF
+*.py text eol=lf
+
+# Other text files
+*.txt text
+*.md text
+*.json text
+*.yml text
+*.yaml text
+*.toml text
+*.ini text
+*.conf text
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary

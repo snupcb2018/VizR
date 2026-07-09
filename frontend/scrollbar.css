@@ -1,0 +1,149 @@
+/* Custom scrollbar styles for better visibility */
+.scrollable-table {
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+.scrollable-table::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.scrollable-table::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 6px;
+}
+
+.scrollable-table::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
+}
+
+.scrollable-table::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.scrollable-table::-webkit-scrollbar-corner {
+  background: #f1f5f9;
+}
+
+/* Table with dynamic height based on viewport */
+.data-table-container {
+  height: calc(100vh - 380px); /* Full viewport height minus header, tabs, and padding */
+  min-height: 300px; /* Minimum height for usability */
+  max-height: 70vh; /* Maximum height as percentage of viewport */
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* Responsive height adjustments */
+@media (max-height: 600px) {
+  .data-table-container {
+    height: calc(100vh - 280px);
+    max-height: 60vh;
+  }
+}
+
+@media (max-height: 800px) {
+  .data-table-container {
+    height: calc(100vh - 320px);
+    max-height: 65vh;
+  }
+}
+
+@media (min-height: 1000px) {
+  .data-table-container {
+    height: calc(100vh - 420px);
+    max-height: 75vh;
+  }
+}
+
+/* Special class for full-height tables that adapt to available space */
+.adaptive-height-table {
+  height: calc(100vh - 380px);
+  min-height: 350px;
+  max-height: calc(100vh - 200px);
+  overflow: auto;
+  overflow-x: scroll; /* 수평 스크롤바를 항상 표시 */
+  overflow-y: auto;   /* 수직 스크롤은 자동 */
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* For different screen sizes */
+@media (max-width: 768px) {
+  .adaptive-height-table {
+    height: calc(100vh - 320px);
+    min-height: 250px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .adaptive-height-table {
+    height: calc(100vh - 450px);
+    min-height: 400px;
+  }
+}
+
+/* Sticky header styles */
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* Better hover effects for table rows */
+.table-row:hover {
+  background-color: #f8fafc;
+}
+
+/* Ensure proper table layout */
+.data-table {
+  min-width: 100%;
+  background-color: white;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* Additional scrollbar styles for containers that need better visibility */
+.enhanced-scrollbar {
+  /* Firefox */
+  scrollbar-width: auto;
+  scrollbar-color: #6366f1 #e5e7eb;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar-track {
+  background: #e5e7eb;
+  border-radius: 7px;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar-thumb {
+  background: #6366f1;
+  border-radius: 7px;
+  border: 2px solid #e5e7eb;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #4f46e5;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar-corner {
+  background: #e5e7eb;
+}

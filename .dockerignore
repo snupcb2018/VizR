@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+
+# Docker
+docker-compose.yml
+Dockerfile
+Dockerfile.production
+
+# 로그 및 임시 파일
+*.log
+*.tmp
+.tmp
+
+# Frontend
+frontend/node_modules
+frontend/dist
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.venv
+venv
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 데이터 디렉토리 (이미지에 포함 안 함)
+workbench
+data
+*.db
+*.sqlite
+*.db-shm
+*.db-wal
+
+# 게놈 데이터 및 리소스 (용량 큰 파일)
+bin
+sample
+node_modules
+log
+*.log
