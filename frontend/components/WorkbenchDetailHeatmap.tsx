@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Plot from 'react-plotly.js';
+import Plotly from 'plotly.js/dist/plotly';
 import { apiService } from '../services/api';
 import InterestingGenesSidebar from './InterestingGenesSidebar';
 import { useHeatmapColors } from '../contexts/UserSettingsContext';
@@ -38,6 +39,53 @@ type HeatmapLabelEditorState = {
     currentLabel: string;
     defaultLabel: string;
 } | null;
+
+const clamp = (value: number, minimum: number, maximum: number) =>
+    Math.min(maximum, Math.max(minimum, value));
+
+const zoomAxisRange = (
+    range: unknown,
+    pointerFraction: number,
+    zoomFactor: number,
+    itemCount: number
+): [number, number] | null => {
+    if (!Array.isArray(range) || range.length < 2 || itemCount <= 0) return null;
+
+    const start = Number(range[0]);
+    const end = Number(range[1]);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) return null;
+
+    const dataMinimum = -0.5;
+    const dataMaximum = itemCount - 0.5;
+    const fullSpan = dataMaximum - dataMinimum;
+    const direction = end > start ? 1 : -1;
+    const center = start + (end - start) * clamp(pointerFraction, 0, 1);
+    const currentSpan = Math.abs(end - start);
+    const nextSpan = clamp(currentSpan * zoomFactor, Math.min(0.5, fullSpan), fullSpan);
+
+    if (nextSpan >= fullSpan) {
+        return direction > 0
+            ? [dataMinimum, dataMaximum]
+            : [dataMaximum, dataMinimum];
+    }
+
+    const centerFromStart = Math.abs(center - start) / currentSpan;
+    let nextMinimum = center - nextSpan * centerFromStart;
+    let nextMaximum = nextMinimum + nextSpan;
+
+    if (nextMinimum < dataMinimum) {
+        nextMaximum += dataMinimum - nextMinimum;
+        nextMinimum = dataMinimum;
+    }
+    if (nextMaximum > dataMaximum) {
+        nextMinimum -= nextMaximum - dataMaximum;
+        nextMaximum = dataMaximum;
+    }
+
+    return direction > 0
+        ? [nextMinimum, nextMaximum]
+        : [nextMaximum, nextMinimum];
+};
 
 const summarizePlotPoint = (point: any) => {
     if (!point) return null;
@@ -120,34 +168,6 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
         // 최소 2, 최대 5로 제한
         return Math.min(5, Math.max(2, Math.ceil(p99 * 10) / 10));
     }, [heatmapData]);
-
-    // 높이 계산 로직
-    const calculateDimensions = useMemo(() => {
-        const geneCount = visibleHeatmapRowIndexes
-            ? visibleHeatmapRowIndexes.length
-            : (heatmapData?.y?.length || selectedGenes.length);
-        const MIN_HEIGHT = 300;
-        const MAX_HEIGHT = 1200;
-        const MIN_ROW_HEIGHT = 2;
-        const MAX_ROW_HEIGHT = 15;
-        const PADDING = 100;
-
-        let rowHeight = Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, 15));
-        let totalHeight = geneCount * rowHeight + PADDING;
-
-        totalHeight = Math.max(MIN_HEIGHT, totalHeight);
-        totalHeight = Math.min(MAX_HEIGHT, totalHeight);
-
-        if (totalHeight === MAX_HEIGHT && geneCount > 0) {
-            rowHeight = Math.floor((MAX_HEIGHT - PADDING) / geneCount);
-        }
-
-        return {
-            height: totalHeight,
-            rowHeight: rowHeight,
-            needsScroll: totalHeight === MAX_HEIGHT
-        };
-    }, [heatmapData, selectedGenes.length, visibleHeatmapRowIndexes]);
 
     // normalizationMethod가 log2fc_reference로 변경될 때 기준 샘플 자동 설정
     useEffect(() => {
@@ -289,6 +309,22 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
         displayHeatmapRowsRef.current = displayHeatmapRows;
     }, [displayHeatmapRows]);
 
+    const heatmapViewportRevision = useMemo(() => JSON.stringify({
+        workbenchId,
+        samples: heatmapData?.x || [],
+        genes: displayHeatmapRows.map((row) => row.geneId),
+        clusteringMethod,
+        normalizationMethod,
+        referenceSample: normalizationMethod === 'log2fc_reference' ? referenceSample : '',
+    }), [
+        workbenchId,
+        heatmapData,
+        displayHeatmapRows,
+        clusteringMethod,
+        normalizationMethod,
+        referenceSample,
+    ]);
+
     // 캐시 키 생성 함수
     const generateCacheKey = (genes: string[], clustering: string, normalize: string, refSample: string): string => {
         // 유전자 목록을 정렬하여 순서에 무관하게 동일한 키 생성
@@ -340,8 +376,6 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
 
     const plotConfig = useMemo(() => {
         if (!heatmapData || displayHeatmapRows.length === 0) return null;
-
-        const { height, rowHeight, needsScroll } = calculateDimensions;
 
         // Colorbar title과 hover value 설정
         let colorbarTitle = 'Z-score';
@@ -419,6 +453,11 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
 
         // 제목 줄 수에 따라 상단 마진 동적 조정 (각 줄당 약 30px, 기본 80px)
         const topMargin = 80 + (titleInfo.lineCount - 1) * 30;
+        const exportHeight = clamp(
+            displayHeatmapRows.length * 15 + topMargin + 120,
+            800,
+            2400
+        );
 
         const zRange = normalizationMethod === 'zscore'
             ? { zmin: -zscoreClip, zmax: zscoreClip }
@@ -513,7 +552,7 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                     l: 150,
                     r: 50
                 },
-                dragmode: 'zoom',
+                dragmode: 'pan',
                 xaxis: {
                     title: 'Samples',
                     side: 'bottom',
@@ -530,17 +569,16 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                     showticklabels: true,
                     fixedrange: false
                 },
-                width: undefined,  // Auto-width
-                height: height + 100,
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
-                autosize: true
+                autosize: true,
+                uirevision: heatmapViewportRevision
             },
             config: {
                 toImageButtonOptions: {
                     format: 'png',
                     filename: `heatmap_${new Date().toISOString().split('T')[0]}`,
-                    height: height + 100,
+                    height: exportHeight,
                     width: 900,
                     scale: 10
                 },
@@ -548,7 +586,67 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                 responsive: true
             }
         };
-    }, [heatmapData, displayHeatmapRows, zscoreClip, calculateDimensions, yAxisFontSize, normalizationMethod, selectedGenes.length, selectedFileNames, referenceSample, colors, selectedHeatmapRowIndexes, visibleHeatmapRowIndexes]);
+    }, [heatmapData, displayHeatmapRows, zscoreClip, yAxisFontSize, normalizationMethod, selectedGenes.length, selectedFileNames, referenceSample, colors, selectedHeatmapRowIndexes, visibleHeatmapRowIndexes, heatmapViewportRevision]);
+
+    useEffect(() => {
+        const container = plotContainerRef.current;
+        if (!container || !plotConfig) return;
+
+        const handleWheelZoom = (event: WheelEvent) => {
+            if (event.deltaY === 0) return;
+
+            const plotElement = container.querySelector('.js-plotly-plot') as any;
+            const plotArea = container.querySelector('.nsewdrag') as SVGRectElement | null;
+            const xRange = plotElement?._fullLayout?.xaxis?.range;
+            const yRange = plotElement?._fullLayout?.yaxis?.range;
+
+            if (!plotElement || !plotArea || !xRange || !yRange) return;
+
+            const plotRect = plotArea.getBoundingClientRect();
+            if (
+                plotRect.width <= 0 ||
+                plotRect.height <= 0 ||
+                event.clientX < plotRect.left ||
+                event.clientX > plotRect.right ||
+                event.clientY < plotRect.top ||
+                event.clientY > plotRect.bottom
+            ) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const xFraction = (event.clientX - plotRect.left) / plotRect.width;
+            const yFraction = 1 - (event.clientY - plotRect.top) / plotRect.height;
+            const normalizedDelta = clamp(event.deltaY, -100, 100);
+            const zoomFactor = Math.exp(normalizedDelta * 0.0025);
+            const nextXRange = zoomAxisRange(
+                xRange,
+                xFraction,
+                zoomFactor,
+                heatmapData?.x?.length || 0
+            );
+            const nextYRange = zoomAxisRange(
+                yRange,
+                yFraction,
+                zoomFactor,
+                displayHeatmapRowsRef.current.length
+            );
+
+            if (!nextXRange || !nextYRange) return;
+
+            void Plotly.relayout(plotElement, {
+                'xaxis.range': nextXRange,
+                'yaxis.range': nextYRange,
+            });
+        };
+
+        container.addEventListener('wheel', handleWheelZoom, { passive: false });
+        return () => {
+            container.removeEventListener('wheel', handleWheelZoom);
+        };
+    }, [plotConfig, heatmapData]);
 
     const copyTextToClipboard = async (text: string) => {
         if (navigator.clipboard?.writeText) {
@@ -1036,9 +1134,9 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
         if (!heatmapData) return;
 
         if (event['yaxis.range[0]'] !== undefined && event['yaxis.range[1]'] !== undefined) {
-            const yMin = Math.floor(event['yaxis.range[0]']);
-            const yMax = Math.ceil(event['yaxis.range[1]']);
-            const visibleGenes = yMax - yMin;
+            const yStart = Number(event['yaxis.range[0]']);
+            const yEnd = Number(event['yaxis.range[1]']);
+            const visibleGenes = Math.abs(yEnd - yStart);
 
             let newFontSize = 10;
             if (visibleGenes <= 10) {
@@ -1075,7 +1173,7 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
             />
 
             {/* Main content */}
-            <div className="flex-1 flex flex-col bg-slate-50">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-slate-50">
                 {/* Controls */}
                 <div className="px-6 py-4 border-b border-slate-200 bg-white">
                     <div className="flex items-center gap-6 flex-wrap">
@@ -1137,7 +1235,7 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                 </div>
 
                 {/* Content */}
-                <div className={`flex-1 p-6 ${!isLoading && selectedGenes.length > 0 && plotConfig ? 'overflow-hidden' : 'overflow-auto'}`}>
+                <div className={`min-h-0 flex-1 p-6 ${!isLoading && selectedGenes.length > 0 && plotConfig ? 'overflow-hidden' : 'overflow-auto'}`}>
                     {isLoading ? (
                         <div className="flex items-center justify-center h-full">
                             <div className="text-center">
@@ -1225,12 +1323,18 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                                     </div>
                                 </div>
                             </div>
-                            <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white p-4">
-                                <div ref={plotContainerRef} onDoubleClickCapture={handlePlotDoubleClick}>
-                                    <Plot {...plotConfig} onClick={handlePlotClick} onRelayout={handleRelayout} style={{ width: '100%', height: 'auto' }} />
+                            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-4">
+                                <div ref={plotContainerRef} onDoubleClickCapture={handlePlotDoubleClick} className="min-h-0 flex-1">
+                                    <Plot
+                                        {...plotConfig}
+                                        onClick={handlePlotClick}
+                                        onRelayout={handleRelayout}
+                                        useResizeHandler
+                                        style={{ width: '100%', height: '100%' }}
+                                    />
                                 </div>
-                                <div className="mt-4 text-xs text-slate-500 text-center">
-                                    Tip: Click to start over, Ctrl/Cmd-click to add a new block anchor, Shift-click to append a range | Drag to zoom, double-click to reset | Use camera icon (📷) in toolbar to download high-resolution PNG
+                                <div className="mt-4 shrink-0 text-xs text-slate-500 text-center">
+                                    Tip: Click to start over, Ctrl/Cmd-click to add a new block anchor, Shift-click to append a range | Wheel to zoom, drag to pan, double-click to reset | Use the camera toolbar button to download a high-resolution PNG
                                     {normalizationMethod === 'log2fc_reference' && <span> | Alt-click a cell to change reference sample</span>}
                                 </div>
                             </div>
