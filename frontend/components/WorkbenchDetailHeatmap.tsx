@@ -593,7 +593,8 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
         if (!container || !plotConfig) return;
 
         const handleWheelZoom = (event: WheelEvent) => {
-            if (event.deltaY === 0) return;
+            const wheelDelta = event.deltaY !== 0 ? event.deltaY : event.deltaX;
+            if (wheelDelta === 0) return;
 
             const plotElement = container.querySelector('.js-plotly-plot') as any;
             const plotArea = container.querySelector('.nsewdrag') as SVGRectElement | null;
@@ -619,25 +620,33 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
 
             const xFraction = (event.clientX - plotRect.left) / plotRect.width;
             const yFraction = 1 - (event.clientY - plotRect.top) / plotRect.height;
-            const normalizedDelta = clamp(event.deltaY, -100, 100);
+            const normalizedDelta = clamp(wheelDelta, -100, 100);
             const zoomFactor = Math.exp(normalizedDelta * 0.0025);
-            const nextXRange = zoomAxisRange(
-                xRange,
-                xFraction,
-                zoomFactor,
-                heatmapData?.x?.length || 0
-            );
+
+            if (event.shiftKey) {
+                const nextXRange = zoomAxisRange(
+                    xRange,
+                    xFraction,
+                    zoomFactor,
+                    heatmapData?.x?.length || 0
+                );
+                if (!nextXRange) return;
+
+                void Plotly.relayout(plotElement, {
+                    'xaxis.range': nextXRange,
+                });
+                return;
+            }
+
             const nextYRange = zoomAxisRange(
                 yRange,
                 yFraction,
                 zoomFactor,
                 displayHeatmapRowsRef.current.length
             );
-
-            if (!nextXRange || !nextYRange) return;
+            if (!nextYRange) return;
 
             void Plotly.relayout(plotElement, {
-                'xaxis.range': nextXRange,
                 'yaxis.range': nextYRange,
             });
         };
@@ -1334,7 +1343,7 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                                     />
                                 </div>
                                 <div className="mt-4 shrink-0 text-xs text-slate-500 text-center">
-                                    Tip: Click to start over, Ctrl/Cmd-click to add a new block anchor, Shift-click to append a range | Wheel to zoom, drag to pan, double-click to reset | Use the camera toolbar button to download a high-resolution PNG
+                                    Tip: Click to start over, Ctrl/Cmd-click to add a new block anchor, Shift-click to append a range | Wheel to zoom genes, Shift-wheel to zoom samples, drag to pan, double-click to reset | Use the camera toolbar button to download a high-resolution PNG
                                     {normalizationMethod === 'log2fc_reference' && <span> | Alt-click a cell to change reference sample</span>}
                                 </div>
                             </div>
