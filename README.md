@@ -116,6 +116,20 @@ Open:
 
 - `http://localhost:5001`
 
+A Docker ID is not required to pull the public VizR image. Docker Hub
+authentication is optional, although anonymous pull-rate limits may apply.
+
+For a fresh VizR data directory, sign in with the initial local administrator
+account:
+
+- Username: `admin`
+- Password: `admin`
+
+Change the default password immediately after the first login. The
+administrator can create additional accounts through **Create New User** or
+**User Management**. If an existing VizR data directory is reused, the
+credentials already stored in its `vizr.db` database remain in effect.
+
 ### Quick Start C. Source Build Path
 
 1. Clone the repository.
@@ -151,6 +165,19 @@ Additional notes:
 - The Windows launcher path assumes Docker Desktop is available
 - The first launch may take longer because the Docker image must be pulled
 - RNA-seq analysis jobs can require substantial storage depending on dataset size
+
+Recommended hardware:
+
+| Use case | CPU | Memory | Storage |
+|---|---:|---:|---|
+| Evaluation and a small test dataset | 4 cores | 8 GB RAM | At least 50 GB free |
+| Typical multi-sample study | 8-16 cores | 16-32 GB RAM | SSD with free space at least 5 times the compressed FASTQ volume; 500 GB or more recommended |
+| Large study | 16 or more cores | 32-64 GB RAM | 1 TB or more of SSD storage |
+
+Trimmed FASTQ, SAM/BAM, reference-index, and result files can require
+substantially more space than compressed FASTQ inputs. Users with limited
+memory can reduce the number of parallel workers, with a corresponding increase
+in runtime.
 
 ## 6. Configuration
 

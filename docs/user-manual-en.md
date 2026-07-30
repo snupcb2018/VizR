@@ -151,6 +151,41 @@ The workbench is the basic working unit of RNA-Seq analysis. This manual explain
 
 ---
 
+## Initial Installation and Login
+
+VizR is distributed as a public Docker image and Docker Compose configuration.
+A Docker ID is not required, although Docker's anonymous pull-rate limits may
+apply. After installing and starting Docker Desktop or Docker Engine, clone the
+VizR repository, select a persistent data directory through `VIZR_PATH`, run
+`docker compose up -d`, and open `http://localhost:5001`.
+
+For a fresh VizR data directory, use the initial local administrator account:
+
+| Item | Initial value |
+|---|---|
+| URL | `http://localhost:5001` |
+| Username | `admin` |
+| Password | `admin` |
+
+Change the default password immediately after the first login. The
+administrator can create additional accounts through **Create New User** or
+**User Management**. If an existing data directory is reused, the credentials
+already stored in its `vizr.db` database remain in effect.
+
+Recommended hardware depends on FASTQ volume and parallel processing:
+
+| Use case | CPU | Memory | Storage |
+|---|---:|---:|---|
+| Evaluation and a small test dataset | 4 cores | 8 GB RAM | At least 50 GB free |
+| Typical multi-sample study | 8-16 cores | 16-32 GB RAM | SSD with at least 5 times the compressed FASTQ volume free; 500 GB or more recommended |
+| Large study | 16 or more cores | 32-64 GB RAM | 1 TB or more SSD |
+
+Intermediate trimmed FASTQ, SAM/BAM, reference-index, and result files can
+require substantially more storage than the compressed inputs. Reducing the
+number of parallel workers lowers peak memory use but increases runtime.
+
+---
+
 ## Table of Contents
 
 ### Part 1. Workbench Creation Guide

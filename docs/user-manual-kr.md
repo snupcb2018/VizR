@@ -151,6 +151,41 @@ strong {
 
 ---
 
+## 초기 설치 및 로그인
+
+VizR은 공개 Docker 이미지와 Docker Compose 설정으로 배포됩니다. Docker
+ID는 필요하지 않지만 Docker의 비인증 pull-rate 제한이 적용될 수 있습니다.
+Docker Desktop 또는 Docker Engine을 설치하고 시작한 다음 VizR 저장소를
+clone하고, `VIZR_PATH`로 영구 데이터 폴더를 지정한 후
+`docker compose up -d`를 실행하고 `http://localhost:5001`에 접속합니다.
+
+새로운 VizR 데이터 폴더에서는 다음의 초기 로컬 관리자 계정을 사용합니다.
+
+| 항목 | 초기값 |
+|---|---|
+| URL | `http://localhost:5001` |
+| 사용자명 | `admin` |
+| 비밀번호 | `admin` |
+
+첫 로그인 직후 기본 비밀번호를 변경하십시오. 관리자는 **Create New User**
+또는 **User Management**에서 추가 계정을 생성할 수 있습니다. 기존 데이터
+폴더를 다시 사용하는 경우에는 해당 폴더의 `vizr.db` 데이터베이스에 저장된
+기존 로그인 정보가 계속 적용됩니다.
+
+FASTQ 용량과 병렬 처리 수준에 따른 권장 하드웨어는 다음과 같습니다.
+
+| 사용 목적 | CPU | 메모리 | 저장장치 |
+|---|---:|---:|---|
+| 평가 및 소규모 테스트 데이터셋 | 4코어 | RAM 8 GB | 최소 50 GB 여유 공간 |
+| 일반적인 다중 샘플 연구 | 8-16코어 | RAM 16-32 GB | 압축 FASTQ 용량의 최소 5배가 비어 있는 SSD, 500 GB 이상 권장 |
+| 대규모 연구 | 16코어 이상 | RAM 32-64 GB | SSD 1 TB 이상 |
+
+중간 산출물인 trimmed FASTQ, SAM/BAM, reference index 및 결과 파일은
+압축 입력 파일보다 훨씬 많은 저장 공간을 요구할 수 있습니다. 병렬 worker
+수를 줄이면 최대 메모리 사용량은 감소하지만 실행 시간은 늘어납니다.
+
+---
+
 ## 목차
 
 ### Part 1. 워크벤치 생성 가이드
