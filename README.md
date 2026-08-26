@@ -22,9 +22,15 @@ The repository includes:
 - Multiple input methods: local upload, NCBI BioProject retrieval, and server-resident files
 - Automated upstream RNA-seq processing pipeline
 - Interactive counts, DEG, PCA, clustering, heatmap, and Venn interfaces
-- Gene set enrichment analysis workflows integrated into the platform
+- Automated preranked GSEA for each DEG comparison, with selectable Arabidopsis gene-set databases, enrichment plots, leading-edge gene exploration, and downloadable validation inputs
 - Prebuilt Docker image support for simplified deployment
 - Windows launcher and installer workflow for local users
+
+### GSEA Scope and Interpretation
+
+VizR provides a built-in preranked GSEA workflow using ranked DEG results and selected Arabidopsis gene-set databases. The current implementation uses 25 null permutations per gene set and reports nominal p-values with Benjamini-Hochberg adjustment. These results are intended for exploratory pathway screening and leading-edge gene identification rather than final statistical validation.
+
+For publication-grade statistical testing, users should download the RNK and GMT files provided under Validation Inputs and reanalyze them using an established implementation such as Broad GSEAPreranked, GSEApy with at least 1,000 permutations, or fgseaMultilevel.
 
 ## 3. Installation Options
 

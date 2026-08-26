@@ -51,6 +51,8 @@ blockquote {
     font-style: normal;
     color: #475569;
     border-radius: 0 6px 6px 0;
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 /* ===== 인라인 코드 ===== */
@@ -204,6 +206,7 @@ FASTQ 용량과 병렬 처리 수준에 따른 권장 하드웨어는 다음과 
   - [3-3. Sequence Cleaning](#3-3-sequence-cleaning)
   - [3-4. Quantification](#3-4-quantification)
   - [3-5. Differential Expression](#3-5-differential-expression)
+  - [3-6. GSEA](#3-6-gsea)
 
 ### Part 2. 화면 안내
 
@@ -214,7 +217,7 @@ FASTQ 용량과 병렬 처리 수준에 따른 권장 하드웨어는 다음과 
 - [5. Preprocessing](#5-preprocessing-전처리) — Trimmomatic / PRINSEQ 전처리 결과
 - [6. Alignment](#6-alignment-정렬) — HISAT2 / Bowtie2 정렬 결과
 - [7. Counts](#7-counts-발현량-데이터) — 발현량 매트릭스 조회/분석
-- [8. DEG](#8-deg-differential-expression) — 차등발현 분석 (DESeq2 / edgeR)
+- [8. DEG](#8-deg-differential-expression) — 차등발현 분석 (DESeq2 / edgeR) 및 GSEA
 - [9. PCA](#9-pca-principal-component-analysis) — 주성분 분석
 - [10. Clustering](#10-clustering-analysis) — 클러스터링 (Tree / Mfuzz / WGCNA)
 - [11. Heatmap](#11-heatmap) — 히트맵 시각화
@@ -494,7 +497,22 @@ Trimmomatic 처리 후 PRINSEQ를 순차 적용합니다. 두 도구의 파라�
 |---|---|---|
 | **edgeR** | 디지털 유전자 발현 데이터의 경험적 분석 | `fdr`: False Discovery Rate (기본값: 0.05), `logfc`: Log Fold Change 임계값 (기본값: 1) |
 
-### 3-6. 워크벤치 생성
+### 3-6. GSEA
+
+VizR는 차등발현 분석 후 내장 preranked GSEA를 자동으로 실행할 수 있습니다.
+
+| 설정 | 설명 |
+|---|---|
+| **Enable GSEA** | 각 DEG 비교 조건에 대해 GSEA를 자동 실행 |
+| **Gene-set databases** | GO, KEGG, Gene Family, PlantCyc, PO, TFT 또는 MIR 유전자 세트 선택 |
+| **기본 데이터베이스** | GO와 KEGG |
+| **지원 종** | 내장 유전자 세트 데이터베이스는 현재 *Arabidopsis thaliana*에 대해 제공 |
+
+선택한 데이터베이스만 준비되고 미리 계산됩니다. GSEA를 비활성화하면 해당 파이프라인 단계를 건너뛰며, 이전 실행 결과가 남아 있지 않은 한 DEG GSEA 탭을 사용할 수 없습니다.
+
+> ℹ️ **참고**: GSEA는 전체 유전자 순위 목록에서 특정 유전자 세트가 어떻게 분포하는지 평가합니다. 선택한 일부 유전자를 대상으로 하는 GO/KEGG 과대표현 분석(over-representation analysis)과는 다릅니다.
+
+### 3-7. 워크벤치 생성
 
 모든 설정을 확인한 뒤 **Create Workbench** 버튼을 클릭하면 워크벤치가 생성됩니다.
 
@@ -950,7 +968,7 @@ Trimmomatic과 동일한 레이아웃입니다.
 
 ### 8. DEG (Differential Expression)
 
-차등발현유전자(DEG) 분석 결과를 탐색하는 화면입니다. DESeq2 또는 edgeR로 수행된 분석 결과를 다양한 시각화와 테이블로 확인할 수 있습니다.
+차등발현유전자(DEG) 분석 결과를 탐색하는 화면입니다. DESeq2 또는 edgeR로 수행된 분석 결과를 다양한 시각화와 테이블로 확인할 수 있습니다. GSEA를 활성화한 경우 같은 화면에서 각 비교 조건의 내장 preranked 유전자 세트 enrichment 결과도 확인할 수 있습니다.
 
 #### 1. 분석 상태
 
@@ -985,7 +1003,7 @@ DEG 화면 진입 시 파이프라인 상태에 따라 다른 화면이 표시�
 
 **우측 컨텐츠: 탭 네비게이션**
 
-5개의 탭이 제공됩니다:
+6개의 탭이 제공됩니다:
 
 | 탭 | 설명 |
 |---|---|
@@ -994,6 +1012,7 @@ DEG 화면 진입 시 파이프라인 상태에 따라 다른 화면이 표시�
 | **MA Plot** | 평균 발현량(logCPM) vs 변화량(logFC) 산점도 |
 | **Volcano Plot** | 변화량(logFC) vs 통계적 유의성(-log10 p-value) 산점도 |
 | **Expression Matrix** | P-value/Fold-change 기준 필터링된 발현 매트릭스 |
+| **GSEA** | 선택한 DEG 비교 조건의 내장 preranked 유전자 세트 enrichment 결과 |
 
 > ℹ️ **참고**: 탭을 전환하면 선택된 유전자가 초기화됩니다. 탭 간 유전자 선택은 유지되지 않습니다.
 
@@ -1199,7 +1218,38 @@ P-value와 Fold-change 임계값을 사용자가 직접 설정하여 차등발�
 | **KEGG Pathway** | KEGG 경로 분석 |
 | **Venn Diagram** | 벤 다이어그램 비교 |
 
-#### 7. 공통 인터랙션 패턴
+#### 7. GSEA 탭
+
+GSEA 탭은 선택한 DEG 비교 조건과 유전자 세트 데이터베이스에 대해 VizR 내장 preranked GSEA를 수행합니다. DEG 유의성 기준을 통과한 유전자만이 아니라, 순위 값을 계산할 수 있는 전체 유전자를 사용합니다.
+
+**순위 및 계산 설정**:
+
+| 항목 | 구현 방식 |
+|---|---|
+| **Ranking metric** | `logFC`; 없으면 `log2FoldChange`, 그다음 `stat` |
+| **Gene-set overlap** | 순위 목록에 포함된 유전자 최소 5개, 최대 500개 |
+| **Weight** | `1.0` |
+| **Null permutations** | 유전자 세트당 25회 |
+| **Random seed** | `42` |
+
+**결과 및 시각화**:
+
+| 결과 | 설명 |
+|---|---|
+| **ES** | 순위 목록에서 유전자 세트 구성원의 위치를 나타내는 enrichment score |
+| **NES** | 같은 방향의 null score를 기준으로 정규화한 ES |
+| **Direction** | 양의 NES는 상향 조절 방향, 음의 NES는 하향 조절 방향의 enrichment를 의미 |
+| **Nominal p-value** | 같은 방향의 permutation을 기반으로 계산한 p-value |
+| **BH-adjusted p-value** | Nominal p-value에 Benjamini-Hochberg 보정을 적용한 값. 표준 Broad GSEA 알고리즘의 pooled-null FDR과는 다름 |
+| **Leading-edge genes** | Enrichment score에 가장 크게 기여한 유전자 |
+
+결과 행을 선택하면 enrichment plot, 순위화된 유전자 프로파일, hit 위치 및 leading-edge gene 테이블이 표시됩니다. 결과 CSV, leading-edge gene 파일, VizR가 사용한 RNK와 GMT 파일이 포함된 **Validation Inputs**를 다운로드할 수 있습니다.
+
+> ⚠️ **통계적 해석**: VizR 내장 GSEA는 탐색적 스크리닝을 위한 기능입니다. 유전자 세트당 25회의 null permutation을 사용하므로 nominal p-value와 BH 보정값의 해상도가 낮으며, 이를 논문용 최종 통계 근거로 사용해서는 안 됩니다. NES, enrichment 방향 및 leading-edge genes를 이용하여 후보 경로를 선별한 뒤 외부 도구로 재검증하는 것을 권장합니다.
+
+논문용 통계 검증을 위해 **Validation Inputs**에서 RNK와 GMT 파일을 다운로드한 뒤, Broad GSEAPreranked 또는 GSEApy에서 1,000회 이상의 permutation으로 재분석하거나 fgseaMultilevel을 사용하세요. 결과를 비교할 때는 ranking 방향, 유전자 세트 크기 제한, weighting parameter 및 database snapshot을 동일하게 유지해야 합니다.
+
+#### 8. 공통 인터랙션 패턴
 
 **유전자 선택**:
 - 개별 선택: 각 행의 체크박스 클릭

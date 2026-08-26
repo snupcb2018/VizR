@@ -51,6 +51,8 @@ blockquote {
     font-style: normal;
     color: #475569;
     border-radius: 0 6px 6px 0;
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 /* ===== Inline Code ===== */
@@ -204,6 +206,7 @@ number of parallel workers lowers peak memory use but increases runtime.
   - [3-3. Sequence Cleaning](#3-3-sequence-cleaning)
   - [3-4. Quantification](#3-4-quantification)
   - [3-5. Differential Expression](#3-5-differential-expression)
+  - [3-6. GSEA](#3-6-gsea)
 
 ### Part 2. Screen Guide
 
@@ -214,7 +217,7 @@ number of parallel workers lowers peak memory use but increases runtime.
 - [5. Preprocessing](#5-preprocessing-preprocessing) — Trimmomatic / PRINSEQ preprocessing results
 - [6. Alignment](#6-alignment-alignment) — HISAT2 / Bowtie2 alignment results
 - [7. Counts](#7-counts-expression-data) — Expression matrix browsing and analysis
-- [8. DEG](#8-deg-differential-expression) — Differential expression analysis (DESeq2 / edgeR)
+- [8. DEG](#8-deg-differential-expression) — Differential expression analysis (DESeq2 / edgeR) and GSEA
 - [9. PCA](#9-pca-principal-component-analysis) — Principal component analysis
 - [10. Clustering](#10-clustering-analysis) — Clustering (Tree / Mfuzz / WGCNA)
 - [11. Heatmap](#11-heatmap) — Heatmap visualization
@@ -494,7 +497,22 @@ Perform differential expression gene (DEG) analysis.
 |---|---|---|
 | **edgeR** | Empirical analysis of digital gene expression data | `fdr`: False Discovery Rate (default: 0.05), `logfc`: Log Fold Change threshold (default: 1) |
 
-### 3-6. Create Workbench
+### 3-6. GSEA
+
+VizR can automatically run its built-in preranked GSEA after differential expression analysis.
+
+| Setting | Description |
+|---|---|
+| **Enable GSEA** | Run GSEA automatically for each DEG comparison |
+| **Gene-set databases** | Select GO, KEGG, Gene Family, PlantCyc, PO, TFT, or MIR gene sets |
+| **Default databases** | GO and KEGG |
+| **Supported species** | Built-in gene-set databases are currently provided for *Arabidopsis thaliana* |
+
+Only the selected databases are provisioned and precomputed. Disabling GSEA skips this pipeline step and leaves the DEG GSEA tab unavailable unless results from a previous run already exist.
+
+> ℹ️ **Reference**: GSEA evaluates the distribution of a gene set across the complete ranked gene list. It is different from GO/KEGG over-representation analysis performed on a selected subset of genes.
+
+### 3-7. Create Workbench
 
 After confirming all settings, click the **Create Workbench** button to create the workbench.
 
@@ -950,7 +968,7 @@ Click the **Download** button (green) to download the current expression data fo
 
 ### 8. DEG (Differential Expression)
 
-This screen is used to explore differential expression gene (DEG) analysis results. Results produced by DESeq2 or edgeR can be reviewed through multiple visualizations and tables.
+This screen is used to explore differential expression gene (DEG) analysis results. Results produced by DESeq2 or edgeR can be reviewed through multiple visualizations and tables. When GSEA is enabled, the same screen also provides built-in preranked gene-set enrichment results for each comparison.
 
 #### 1. Analysis Status
 
@@ -985,7 +1003,7 @@ A list of comparison conditions is displayed. Buttons are listed for each group 
 
 **Right content: tab navigation**
 
-Five tabs are provided:
+Six tabs are provided:
 
 | Tab | Description |
 |---|---|
@@ -994,6 +1012,7 @@ Five tabs are provided:
 | **MA Plot** | Scatter plot of mean expression (`logCPM`) vs change (`logFC`) |
 | **Volcano Plot** | Scatter plot of change (`logFC`) vs statistical significance (`-log10 p-value`) |
 | **Expression Matrix** | Expression matrix filtered by P-value / Fold-change criteria |
+| **GSEA** | Built-in preranked gene-set enrichment results for the selected DEG comparison |
 
 > ℹ️ **Reference**: Selected genes are reset when switching tabs. Gene selections are not preserved across tabs.
 
@@ -1199,7 +1218,38 @@ This tab allows the user to generate an expression matrix of differential genes 
 | **KEGG Pathway** | KEGG pathway analysis |
 | **Venn Diagram** | Venn diagram comparison |
 
-#### 7. Common Interaction Pattern
+#### 7. GSEA Tab
+
+The GSEA tab performs VizR's built-in preranked gene-set enrichment analysis for the selected DEG comparison and gene-set database. It uses the complete list of genes with usable ranking values rather than only genes that pass DEG significance thresholds.
+
+**Ranking and calculation settings**:
+
+| Item | Implementation |
+|---|---|
+| **Ranking metric** | `logFC`; if unavailable, `log2FoldChange`, then `stat` |
+| **Gene-set overlap** | Minimum 5 and maximum 500 genes represented in the ranked list |
+| **Weight** | `1.0` |
+| **Null permutations** | 25 per gene set |
+| **Random seed** | `42` |
+
+**Results and visualization**:
+
+| Result | Description |
+|---|---|
+| **ES** | Enrichment score showing where gene-set members occur in the ranked list |
+| **NES** | ES normalized against same-direction null scores |
+| **Direction** | Positive NES indicates enrichment toward the upregulated end; negative NES indicates enrichment toward the downregulated end |
+| **Nominal p-value** | Same-direction permutation-based p-value |
+| **BH-adjusted p-value** | Benjamini-Hochberg adjustment of the nominal p-values; this is not the pooled-null FDR used by the standard Broad GSEA algorithm |
+| **Leading-edge genes** | Genes contributing most strongly to the enrichment score |
+
+Selecting a result displays its enrichment plot, ranked-gene profile, hit positions, and leading-edge gene table. Available downloads include the results CSV, leading-edge gene files, and a **Validation Inputs** bundle containing the exact RNK and GMT inputs used by VizR.
+
+> ⚠️ **Statistical interpretation**: The built-in VizR GSEA is intended for exploratory screening. Because it uses 25 null permutations per gene set, nominal p-values and their BH-adjusted values have limited resolution and should not be used as definitive publication-level evidence. NES, enrichment direction, and leading-edge genes may be used to prioritize candidate pathways for external validation.
+
+For publication-grade statistical testing, download the RNK and GMT files from **Validation Inputs** and reanalyze the same inputs using Broad GSEAPreranked or GSEApy with at least 1,000 permutations, or using fgseaMultilevel. Keep the ranking direction, gene-set size limits, weighting parameter, and database snapshot consistent when comparing results.
+
+#### 8. Common Interaction Pattern
 
 **Gene selection**:
 - Individual selection: click the checkbox of each row

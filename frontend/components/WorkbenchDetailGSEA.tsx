@@ -1153,7 +1153,7 @@ const WorkbenchDetailGSEA: React.FC<WorkbenchDetailGSEAProps> = ({
       ['', ''],
     ];
     const dataRows = [
-      ['Gene Set', 'Description', 'Size', 'NES', 'Nominal p-value', 'FDR q-value', 'Direction', 'Leading-edge count'],
+      ['Gene Set', 'Description', 'Size', 'NES', 'Nominal p-value', 'BH-adjusted p-value', 'Direction', 'Leading-edge count'],
       ...resultRows.map((row) => [
         row.gene_set,
         row.description,
@@ -1800,7 +1800,7 @@ const WorkbenchDetailGSEA: React.FC<WorkbenchDetailGSEAProps> = ({
                           Enrichment Results
                         </h2>
                         <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                          Review Normalized Enrichment Score (NES), nominal p-value, and FDR q-value. Select a row to view the enrichment plot and leading-edge genes.
+                          Review Normalized Enrichment Score (NES), nominal p-value, and BH-adjusted p-value. Select a row to view the enrichment plot and leading-edge genes.
                         </p>
                         {isRunning && (
                           <div className="mt-3 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700">
@@ -1930,7 +1930,7 @@ const WorkbenchDetailGSEA: React.FC<WorkbenchDetailGSEAProps> = ({
                         <th className="px-5 py-3.5 text-right font-semibold">Size</th>
                         <th className="px-5 py-3.5 text-right font-semibold">NES</th>
                         <th className="px-5 py-3.5 text-right font-semibold">NOM p-val</th>
-                        <th className="px-5 py-3.5 text-right font-semibold">FDR q-val</th>
+                        <th className="px-5 py-3.5 text-right font-semibold">BH-adjusted p</th>
                         <th className="px-5 py-3.5 text-center font-semibold">Direction</th>
                       </tr>
                     </thead>
