@@ -558,7 +558,7 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                     side: 'bottom',
                     tickangle: -45,
                     tickfont: xAxisTickfont,
-                    fixedrange: false
+                    fixedrange: true
                 },
                 yaxis: {
                     title: `Genes (${displayHeatmapRows.length})`,
@@ -598,10 +598,9 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
 
             const plotElement = container.querySelector('.js-plotly-plot') as any;
             const plotArea = container.querySelector('.nsewdrag') as SVGRectElement | null;
-            const xRange = plotElement?._fullLayout?.xaxis?.range;
             const yRange = plotElement?._fullLayout?.yaxis?.range;
 
-            if (!plotElement || !plotArea || !xRange || !yRange) return;
+            if (!plotElement || !plotArea || !yRange) return;
 
             const plotRect = plotArea.getBoundingClientRect();
             if (
@@ -618,25 +617,9 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
             event.preventDefault();
             event.stopPropagation();
 
-            const xFraction = (event.clientX - plotRect.left) / plotRect.width;
             const yFraction = 1 - (event.clientY - plotRect.top) / plotRect.height;
             const normalizedDelta = clamp(wheelDelta, -100, 100);
             const zoomFactor = Math.exp(normalizedDelta * 0.0025);
-
-            if (event.shiftKey) {
-                const nextXRange = zoomAxisRange(
-                    xRange,
-                    xFraction,
-                    zoomFactor,
-                    heatmapData?.x?.length || 0
-                );
-                if (!nextXRange) return;
-
-                void Plotly.relayout(plotElement, {
-                    'xaxis.range': nextXRange,
-                });
-                return;
-            }
 
             const nextYRange = zoomAxisRange(
                 yRange,
@@ -845,6 +828,19 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                     clickedGene,
                     clickedRowIndex,
                     wasSelected: prev.includes(clickedRowIndex),
+                    previousCount: prev.length,
+                    nextCount: nextSelection.length,
+                    selectedRowIndexes: nextSelection,
+                    selectedGenes: nextSelection.map((rowIndex) => currentGeneOrder[rowIndex]),
+                });
+                return nextSelection;
+            }
+
+            if (prev.includes(clickedRowIndex)) {
+                nextSelection = prev.filter((rowIndex) => rowIndex !== clickedRowIndex);
+                emitHeatmapSelectionLog('info', 'deselected-gene', {
+                    clickedGene,
+                    clickedRowIndex,
                     previousCount: prev.length,
                     nextCount: nextSelection.length,
                     selectedRowIndexes: nextSelection,
@@ -1343,7 +1339,7 @@ const WorkbenchDetailHeatmap: React.FC<WorkbenchDetailHeatmapProps> = ({ workben
                                     />
                                 </div>
                                 <div className="mt-4 shrink-0 text-xs text-slate-500 text-center">
-                                    Tip: Click to start over, Ctrl/Cmd-click to add a new block anchor, Shift-click to append a range | Wheel to zoom genes, Shift-wheel to zoom samples, drag to pan, double-click to reset | Use the camera toolbar button to download a high-resolution PNG
+                                    Tip: Click to select/unselect, Ctrl/Cmd-click to add a new block anchor, Shift-click to append a range | Wheel to zoom genes, drag vertically to pan, double-click to reset | Use the camera toolbar button to download a high-resolution PNG
                                     {normalizationMethod === 'log2fc_reference' && <span> | Alt-click a cell to change reference sample</span>}
                                 </div>
                             </div>
