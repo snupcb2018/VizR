@@ -5,7 +5,7 @@ interface AIAnalysis {
   confidence_score: number;
   experiment_type: string;
   quality_evaluation: {
-    usability: 'excellent' | 'good' | 'fair' | 'poor';
+    usability: 'excellent' | 'good' | 'fair' | 'poor' | 'unknown';
     notes: string[];
     strengths: string[];
   };

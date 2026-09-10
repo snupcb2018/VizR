@@ -20,6 +20,7 @@ from backend.pipeline.utils.shared_state import shared_state
 from backend.pipeline.utils.process_runner import ProcessPoolRunner
 from backend.pipeline.utils.redis_broker import get_redis_broker
 from backend.utils.logger import setup_module_logger
+from backend.utils.fastqc_parser import validate_fastqc_report
 
 logger = setup_module_logger(__name__, 'INFO')
 
@@ -63,7 +64,16 @@ def send_qc_progress_update(workbench_id: int, progress_data: dict) -> bool:
         return False
 
 
-def _save_qc_progress_to_db(workbench_id: int, completed_files: int, total_files: int) -> bool:
+def _save_qc_progress_to_db(
+    workbench_id: int,
+    completed_files: int,
+    total_files: int,
+    successful_files: int = 0,
+    failed_files: int = 0,
+    displayable_files: int = 0,
+    errors: List[Dict[str, Any]] = None,
+    result_status: str = 'processing',
+) -> bool:
     """
     QC 진행상황을 pipeline_job_steps.progress_detail에 저장
 
@@ -79,8 +89,13 @@ def _save_qc_progress_to_db(workbench_id: int, completed_files: int, total_files
         progress_data = {
             'completed_files': completed_files,
             'total_files': total_files,
+            'successful_files': successful_files,
+            'failed_files': failed_files,
+            'displayable_files': displayable_files,
             'progress_percent': (completed_files / total_files * 100) if total_files > 0 else 0,
-            'last_updated': time.time()
+            'last_updated': time.time(),
+            'result_status': result_status,
+            'errors': errors or [],
         }
 
         with database.get_db_connection() as conn:
@@ -91,8 +106,13 @@ def _save_qc_progress_to_db(workbench_id: int, completed_files: int, total_files
                 UPDATE pipeline_job_steps
                 SET progress_detail = ?,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE workbench_id = ?
-                AND step_name = 'qc'
+                WHERE id = (
+                    SELECT id
+                    FROM pipeline_job_steps
+                    WHERE workbench_id = ? AND step_name = 'qc'
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                )
             """, (
                 json.dumps(progress_data),
                 workbench_id
@@ -316,6 +336,13 @@ def execute_fastqc_multi(sample_info_list: List[Dict], parameters: Dict, worker_
 
     processed_samples = 0
     failed_samples = 0
+    completed_files = 0
+    successful_files = 0
+    failed_files = 0
+    displayable_files = 0
+    validation_errors = []
+    was_stopped = False
+    runner_error = None
     results = []
     total_samples = len(sample_info_list)
 
@@ -346,40 +373,45 @@ def execute_fastqc_multi(sample_info_list: List[Dict], parameters: Dict, worker_
             for i, result in enumerate(runner.map_unordered(run_single_fastqc, work_args)):
                 if result.get('stopped_by_user', False):
                     logger.warning(f"🛑 [FASTQC-MULTI] Sample processing stopped by user")
+                    was_stopped = True
+                    results.append(result)
                     runner.stop()
                     # Reset worker event for next execution
                     shared_state.reset_worker(worker_id)
                     break
 
-                # 결과 처리
+                # A sample may contain one or two independently validated reports.
                 sample_name = result.get('sample_name', f'sample_{i+1}')
-                if result.get('returncode', 0) == 0:
+                result_file_count = result.get('total_files', len(result.get('file_results', [])))
+                result_successful = result.get('successful_files', 0)
+                result_failed = result.get('failed_files', result_file_count - result_successful)
+                completed_files += result_file_count
+                successful_files += result_successful
+                failed_files += result_failed
+                displayable_files += result.get('displayable_files', result_successful)
+                validation_errors.extend(result.get('validation_errors', []))
+
+                if result_file_count > 0 and result_failed == 0:
                     processed_samples += 1
                     logger.info(f"✅ [FASTQC-MULTI] [{i+1}/{len(sample_info_list)}] SUCCESS: {sample_name}")
                 else:
                     failed_samples += 1
-                    logger.warning(f"❌ [FASTQC-MULTI] [{i+1}/{len(sample_info_list)}] FAILED: {sample_name}")
+                    logger.warning(f"⚠️ [FASTQC-MULTI] [{i+1}/{len(sample_info_list)}] PARTIAL/FAILED: {sample_name}")
                     logger.warning(f"   └─ Error: {result.get('stderr', 'Unknown error')[:200]}...")
 
                 results.append(result)
 
-                # 진행률 업데이트 (성공/실패 모두 완료로 카운트)
-                # Calculate completed files based on the current sample's file count
-                completed_file_count = 0
-                for idx in range(i + 1):
-                    sample = sample_info_list[idx]
-                    files = sample.get('files', {})
-                    if 'R1' in files or 'SE' in files:
-                        completed_file_count += 1
-                    if 'R2' in files:
-                        completed_file_count += 1
-
-                progress_percent = (completed_file_count / total_files * 100) if total_files > 0 else 0
+                progress_percent = (completed_files / total_files * 100) if total_files > 0 else 0
 
                 if workbench_id:
                     progress_data = {
-                        'completed_files': completed_file_count,
+                        'completed_files': completed_files,
                         'total_files': total_files,
+                        'successful_files': successful_files,
+                        'failed_files': failed_files,
+                        'displayable_files': displayable_files,
+                        'result_status': 'processing',
+                        'errors': validation_errors,
                         'progress_percent': progress_percent
                     }
 
@@ -387,20 +419,26 @@ def execute_fastqc_multi(sample_info_list: List[Dict], parameters: Dict, worker_
                     send_qc_progress_update(workbench_id, progress_data)
 
                     # DB에 진행률 저장
-                    _save_qc_progress_to_db(workbench_id, completed_file_count, total_files)
+                    _save_qc_progress_to_db(
+                        workbench_id, completed_files, total_files,
+                        successful_files, failed_files, displayable_files,
+                        validation_errors, 'processing'
+                    )
 
-                logger.info(f"📊 [FASTQC-MULTI] Progress: {completed_file_count}/{total_files} files ({progress_percent:.1f}%)")
+                logger.info(f"📊 [FASTQC-MULTI] Progress: {completed_files}/{total_files} files ({progress_percent:.1f}%)")
             
         except Exception as e:
             logger.error(f"💥 [FASTQC-MULTI] ProcessPoolRunner execution failed: {e}")
-            return {
-                'success': False,
-                'message': f'Multi-processing execution failed: {str(e)}',
-                'processed_samples': processed_samples,
-                'failed_samples': failed_samples,
-                'execution_time': time.time() - start_time,
-                'stopped_by_user': False
-            }
+            runner_error = str(e)
+            unprocessed_files = max(total_files - completed_files, 0)
+            completed_files += unprocessed_files
+            failed_files += unprocessed_files
+            validation_errors.append({
+                'sample': None,
+                'report': None,
+                'input_file': None,
+                'errors': [f'FastQC worker pool failed: {runner_error}'],
+            })
     
     execution_time = time.time() - start_time
 
@@ -416,37 +454,55 @@ def execute_fastqc_multi(sample_info_list: List[Dict], parameters: Dict, worker_
     logger.info(f"   ├─ Success rate: {success_rate:.1f}%")
     logger.info(f"   └─ Total time: {execution_time:.2f}s")
 
-    # 완료 시 최종 진행률 전송 (100% 또는 중단된 상태)
-    if workbench_id:
-        # Calculate final completed file count
-        final_completed_file_count = 0
-        for idx in range(len(results)):
-            sample = sample_info_list[idx]
-            files = sample.get('files', {})
-            if 'R1' in files or 'SE' in files:
-                final_completed_file_count += 1
-            if 'R2' in files:
-                final_completed_file_count += 1
+    user_stopped = was_stopped or any(result.get('stopped_by_user', False) for result in results)
+    if displayable_files == 0:
+        result_status = 'unavailable'
+    elif failed_files > 0 or displayable_files < total_files:
+        result_status = 'partial'
+    else:
+        result_status = 'ready'
 
+    # 완료 시 최종 진행률 전송 및 저장
+    if workbench_id:
         final_progress = {
-            'completed_files': final_completed_file_count,
+            'completed_files': completed_files,
             'total_files': total_files,
-            'progress_percent': (final_completed_file_count / total_files * 100) if total_files > 0 else 0
+            'successful_files': successful_files,
+            'failed_files': failed_files,
+            'displayable_files': displayable_files,
+            'result_status': result_status,
+            'errors': validation_errors,
+            'progress_percent': (completed_files / total_files * 100) if total_files > 0 else 0
         }
         send_qc_progress_update(workbench_id, final_progress)
-        # Note: _save_qc_progress_to_db는 완료 후에는 호출하지 않음 (job_worker에서 이미 step을 completed로 업데이트)
+        _save_qc_progress_to_db(
+            workbench_id, completed_files, total_files,
+            successful_files, failed_files, displayable_files,
+            validation_errors, result_status
+        )
     
-    # User stop 체크
-    user_stopped = any(result.get('stopped_by_user', False) for result in results)
-    overall_success = failed_samples == 0 and not user_stopped
+    # Partial QC remains visible and does not block downstream analysis.
+    overall_success = displayable_files > 0 and not user_stopped
     
     return {
         'success': overall_success,
         'message': f'FastQC processing completed: {processed_samples}/{total_samples} samples successful',
         'processed_samples': processed_samples,
         'failed_samples': failed_samples,
+        'completed_files': completed_files,
+        'successful_files': successful_files,
+        'failed_files': failed_files,
+        'displayable_files': displayable_files,
+        'result_status': result_status,
+        'validation_errors': validation_errors,
+        'warning': 'Some FastQC reports are unavailable' if result_status == 'partial' else None,
+        'stderr': '; '.join(
+            f"{item.get('report', 'unknown')}: {', '.join(item.get('errors', []))}"
+            for item in validation_errors
+        ),
         'execution_time': execution_time,
         'stopped_by_user': user_stopped,
+        'runner_error': runner_error,
         'results': results
     }
 
@@ -535,6 +591,7 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
             files = ensure_decompressed_files(files, logger)
         except FileNotFoundError as e:
             logger.error(f"   ❌ Input file preparation failed: {e}")
+            input_count = int('R1' in files or 'SE' in files) + int('R2' in files)
             return {
                 'success': False,
                 'sample_name': sample_name,
@@ -545,7 +602,17 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
                 'output_files': [],
                 'execution_time': time.time() - start_time,
                 'error_message': str(e),
-                'pid': os.getpid()
+                'pid': os.getpid(),
+                'total_files': input_count,
+                'successful_files': 0,
+                'failed_files': input_count,
+                'displayable_files': 0,
+                'validation_errors': [{
+                    'sample': sample_name,
+                    'report': None,
+                    'input_file': None,
+                    'errors': [str(e)],
+                }],
             }
 
         # Log input file information
@@ -654,8 +721,10 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
         logger.info(f"📋 [FASTQC-{os.getpid()}] STEP 3: 출력 파일 검증")
         logger.info(f"📋 [FASTQC-{os.getpid()}] ═══════════════════════════════════════")
         
-        # 예상 출력 파일 목록 생성
+        # Build and validate the exact artifacts consumed by the VizR UI.
         expected_files = []
+        optional_files = []
+        report_validations = []
         for input_file in input_files:
             base_name = os.path.basename(input_file)
             # Remove extensions
@@ -668,10 +737,25 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
             elif base_name.endswith('.fq'):
                 base_name = base_name[:-3]
             
-            expected_files.extend([
-                os.path.join(sample_output_dir, f"{base_name}_fastqc.html"),
-                os.path.join(sample_output_dir, f"{base_name}_fastqc.zip")
-            ])
+            report_base = os.path.join(sample_output_dir, f"{base_name}_fastqc")
+            html_path = f"{report_base}.html"
+            zip_path = f"{report_base}.zip"
+            data_path = os.path.join(report_base, 'fastqc_data.txt')
+            validation = validate_fastqc_report(
+                data_path=data_path,
+                zip_path=zip_path,
+                html_path=html_path,
+                recover=True,
+            )
+            validation.pop('modules', None)
+            validation['input_file'] = input_file
+            validation['report_name'] = os.path.basename(report_base)
+            if not result['success']:
+                validation['errors'].insert(0, f"FastQC exited with code {result['returncode']}")
+                validation['valid'] = False
+            report_validations.append(validation)
+            expected_files.extend([html_path, data_path])
+            optional_files.append(zip_path)
         
         logger.info(f"🔍 [FASTQC-{os.getpid()}] 예상 출력 파일 {len(expected_files)}개 검증 중...")
         
@@ -689,14 +773,32 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
             else:
                 missing_files.append(expected_file)
                 logger.warning(f"   ❌ 누락: 파일이 생성되지 않음")
+
+        for optional_file in optional_files:
+            if os.path.isfile(optional_file) and os.path.getsize(optional_file) > 0:
+                actual_output_files.append(optional_file)
+                total_output_size += os.path.getsize(optional_file)
+
+        successful_files = sum(1 for validation in report_validations if validation['valid'])
+        displayable_files = successful_files
+        failed_files = len(report_validations) - successful_files
+        validation_errors = [
+            {
+                'sample': sample_name,
+                'report': validation['report_name'],
+                'input_file': os.path.basename(validation['input_file']),
+                'errors': validation['errors'],
+            }
+            for validation in report_validations if not validation['valid']
+        ]
         
         logger.info(f"📊 [FASTQC-{os.getpid()}] 파일 검증 결과:")
-        logger.info(f"   ├─ 생성된 파일: {len(actual_output_files)}/{len(expected_files)}")
-        logger.info(f"   ├─ 누락된 파일: {len(missing_files)}")
+        logger.info(f"   ├─ 표시 가능한 보고서: {displayable_files}/{len(report_validations)}")
+        logger.info(f"   ├─ 기술 검증 실패: {failed_files}")
         logger.info(f"   └─ 총 출력 크기: {total_output_size:,} bytes")
         
         # 최종 결과 처리
-        if result['success']:
+        if displayable_files > 0:
             total_time = time.time() - start_time
             logger.info(f"")
             logger.info(f"🏆 [FASTQC-{os.getpid()}] ╔══════════════════════════════════════════════════════════════════╗")
@@ -706,7 +808,7 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
             logger.info(f"   ├─ 그룹명: {group_name}")
             logger.info(f"   ├─ 샘플명: {sample_name}")
             logger.info(f"   ├─ 파일 타입: {file_type}")
-            logger.info(f"   ├─ 생성된 파일: {len(actual_output_files)}/{len(expected_files)} 개")
+            logger.info(f"   ├─ 표시 가능한 보고서: {displayable_files}/{len(report_validations)} 개")
             logger.info(f"   ├─ 총 처리 시간: {total_time:.2f}초")
             logger.info(f"   ├─ FastQC 실행 시간: {exec_time:.2f}초")
             logger.info(f"   ├─ 총 출력 크기: {total_output_size:,} bytes")
@@ -802,13 +904,13 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
                 logger.warning(f"⚠️ [AI-QC-{os.getpid()}] AI 분석 중 예외 발생: {ai_error}")
                 logger.warning(f"   └─ FastQC 결과는 유효함")
             
-            if missing_files:
+            if validation_errors:
                 logger.warning(f"")
-                logger.warning(f"⚠️  [FASTQC-{os.getpid()}] 일부 예상 파일이 생성되지 않았습니다:")
-                for missing in missing_files:
-                    logger.warning(f"     └─ {os.path.basename(missing)}")
+                logger.warning(f"⚠️  [FASTQC-{os.getpid()}] 일부 결과를 화면에 표시할 수 없습니다:")
+                for failure in validation_errors:
+                    logger.warning(f"     └─ {failure['report']}: {'; '.join(failure['errors'])}")
             else:
-                logger.info(f"✨ [FASTQC-{os.getpid()}] 모든 예상 파일이 성공적으로 생성되었습니다!")
+                logger.info(f"✨ [FASTQC-{os.getpid()}] 모든 결과가 검증 및 파싱되었습니다!")
         else:
             logger.error(f"")
             logger.error(f"💥 [FASTQC-{os.getpid()}] ╔══════════════════════════════════════════════════════════════════╗")
@@ -829,15 +931,27 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
                     if line.strip():
                         logger.error(f"   │ {line.strip()}")
         
+        validation_message = '; '.join(
+            f"{failure['report']}: {', '.join(failure['errors'])}"
+            for failure in validation_errors
+        )
+        combined_stderr = '\n'.join(part for part in [result['stderr'], validation_message] if part)
         return {
             'sample_name': sample_name,
             'condition': group_name,
-            'returncode': result['returncode'],
+            'success': failed_files == 0,
+            'returncode': 0 if failed_files == 0 else (result['returncode'] or 1),
             'stdout': result['stdout'],
-            'stderr': result['stderr'],
+            'stderr': combined_stderr,
             'output_files': actual_output_files,
             'expected_files': expected_files,
             'missing_files': missing_files,
+            'file_results': report_validations,
+            'total_files': len(report_validations),
+            'successful_files': successful_files,
+            'failed_files': failed_files,
+            'displayable_files': displayable_files,
+            'validation_errors': validation_errors,
             'execution_time': exec_time,
             'total_time': time.time() - start_time,
             'pid': os.getpid(),
@@ -865,6 +979,7 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
         return {
             'sample_name': sample_info.get('sample_name', 'unknown'),
             'condition': sample_info.get('group_name', 'unknown'),
+            'success': False,
             'returncode': -1,
             'stdout': '',
             'stderr': str(e),
@@ -874,7 +989,17 @@ def run_single_fastqc(sample_info: Dict[str, Any], parameters: Dict, worker_id: 
             'execution_time': 0,
             'total_time': total_time,
             'pid': os.getpid(),
-            'exception': str(e)
+            'exception': str(e),
+            'total_files': len(sample_info.get('files', {})),
+            'successful_files': 0,
+            'failed_files': len(sample_info.get('files', {})),
+            'displayable_files': 0,
+            'validation_errors': [{
+                'sample': sample_info.get('sample_name', 'unknown'),
+                'report': None,
+                'input_file': None,
+                'errors': [str(e)],
+            }],
         }
     
     finally:

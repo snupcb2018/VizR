@@ -1,5 +1,5 @@
 import React from 'react';
-import { QCSampleDetailProps, SampleStatus } from './types';
+import { QCSampleDetailProps } from './types';
 import QCStatistics from './QCStatistics';
 import QCAIAnalysis from './QCAIAnalysis';
 import QCQuickSummary from './QCQuickSummary';

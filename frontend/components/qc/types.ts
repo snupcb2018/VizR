@@ -59,7 +59,7 @@ export interface Summary {
 }
 
 // Module Statistics
-export interface ModuleStatistics {
+export interface SampleModuleStatistics {
     pass_count: number;
     warn_count: number;
     fail_count: number;
@@ -75,8 +75,8 @@ export interface AIAnalysis {
     confidence_score: number;
     experiment_type: string;
     quality_evaluation: {
-        usability: 'excellent' | 'good' | 'fair' | 'poor';
-        concerns: string[];
+        usability: 'excellent' | 'good' | 'fair' | 'poor' | 'unknown';
+        notes: string[];
         strengths: string[];
     };
     recommendations: {
@@ -86,7 +86,7 @@ export interface AIAnalysis {
     };
     expected_outcomes: {
         alignment_rate: string;
-        contamination_risk: string;
+        sequence_quality: string;
         coverage_uniformity: string;
     };
     processing_time?: number;
@@ -97,8 +97,9 @@ export interface Sample {
     id: string;
     name: string;
     group?: string;
-    status?: SampleStatus;  // Made optional since we use statistics now
-    statistics?: ModuleStatistics;  // New field for module statistics
+    status?: SampleStatus;
+    qc_status: 'passed' | 'warning' | 'failed';
+    statistics?: SampleModuleStatistics;
     summary: Summary;
     metrics: QCMetrics;
     file_path?: string;
@@ -152,7 +153,21 @@ export interface QCResultsResponse {
     workbench_id: number;
     samples: Sample[];
     total_count: number;
+    expected_count?: number;
+    parsed_count?: number;
+    failed_count?: number;
+    result_status?: QCResultStatus;
+    errors?: QCResultError[];
     sample_statistics?: SampleStatistics;
     module_statistics?: ModuleStatistics;
     message?: string;
+}
+
+export type QCResultStatus = 'ready' | 'partial' | 'unavailable';
+
+export interface QCResultError {
+    sample?: string | null;
+    report?: string | null;
+    input_file?: string | null;
+    errors: string[];
 }

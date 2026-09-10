@@ -1,27 +1,27 @@
 import React from 'react';
-import { QCSampleOverviewProps, Sample, SampleStatus } from './types';
+import { QCSampleOverviewProps } from './types';
 
 const QCSampleOverview: React.FC<QCSampleOverviewProps> = ({ samples, onSelectSample, moduleStatistics }) => {
-    const getStatusColor = (status: SampleStatus) => {
+    const getStatusColor = (status: string) => {
         switch (status) {
-            case SampleStatus.PASS:
+            case 'passed':
                 return 'border-green-400 bg-green-50';
-            case SampleStatus.WARN:
+            case 'warning':
                 return 'border-yellow-400 bg-yellow-50';
-            case SampleStatus.FAIL:
+            case 'failed':
                 return 'border-red-400 bg-red-50';
             default:
                 return 'border-gray-400 bg-gray-50';
         }
     };
 
-    const getStatusTextColor = (status: SampleStatus) => {
+    const getStatusTextColor = (status: string) => {
         switch (status) {
-            case SampleStatus.PASS:
+            case 'passed':
                 return 'text-green-700 bg-green-100';
-            case SampleStatus.WARN:
+            case 'warning':
                 return 'text-yellow-700 bg-yellow-100';
-            case SampleStatus.FAIL:
+            case 'failed':
                 return 'text-red-700 bg-red-100';
             default:
                 return 'text-gray-700 bg-gray-100';
@@ -88,7 +88,7 @@ const QCSampleOverview: React.FC<QCSampleOverviewProps> = ({ samples, onSelectSa
                 {samples.map((sample) => (
                     <div
                         key={sample.id}
-                        className={`bg-white rounded-lg shadow-sm border-2 cursor-pointer transition-all hover:shadow-md ${getStatusColor(sample.status)}`}
+                        className={`bg-white rounded-lg shadow-sm border-2 cursor-pointer transition-all hover:shadow-md ${getStatusColor(sample.qc_status)}`}
                         onClick={() => onSelectSample(sample)}
                     >
                         <div className="p-4">
@@ -97,8 +97,8 @@ const QCSampleOverview: React.FC<QCSampleOverviewProps> = ({ samples, onSelectSa
                                 <h3 className="font-semibold text-gray-800 text-sm truncate flex-1">
                                     {sample.name}
                                 </h3>
-                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusTextColor(sample.status)}`}>
-                                    {sample.status}
+                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusTextColor(sample.qc_status)}`}>
+                                    {sample.qc_status}
                                 </span>
                             </div>
 

@@ -48,6 +48,7 @@ def get_qc_progress(workbench_id):
                 return jsonify({
                     'workbench_id': workbench_id,
                     'status': 'not_started',
+                    'result_status': 'unavailable',
                     'progress_data': None,
                     'last_updated': None
                 }), 200
@@ -57,6 +58,7 @@ def get_qc_progress(workbench_id):
                 return jsonify({
                     'workbench_id': workbench_id,
                     'status': qc_step['status'],  # DB status 그대로 반환 (pending/running)
+                    'result_status': 'processing',
                     'progress_data': None,
                     'last_updated': qc_step['updated_at']
                 }), 200
@@ -68,7 +70,7 @@ def get_qc_progress(workbench_id):
                 logger.warning(f"Failed to parse QC progress_detail for workbench {workbench_id}: {e}")
                 progress_data = None
 
-            # 상태 결정 (completed_files == total_files이면 completed)
+            # Completion percentage and technical result availability are separate.
             status = qc_step['status']
             logger.info(f"🔄 [QC-API-DEBUG] Initial DB status: '{status}'")
 
@@ -77,9 +79,14 @@ def get_qc_progress(workbench_id):
                 total = progress_data.get('total_files', 0)
                 logger.info(f"📈 [QC-API-DEBUG] Progress: {completed}/{total} files completed")
 
-                if total > 0 and completed == total:
-                    status = 'completed'
-                    logger.info(f"✅ [QC-API-DEBUG] All files completed - status: '{status}'")
+                result_status = progress_data.get('result_status', 'processing')
+                if status in ('failed', 'cancelled'):
+                    logger.info(f"⚠️ [QC-API-DEBUG] Preserving terminal DB status: '{status}'")
+                elif status == 'completed':
+                    logger.info(f"✅ [QC-API-DEBUG] QC step completed with result status: '{result_status}'")
+                elif total > 0 and completed == total and result_status in ('ready', 'partial'):
+                    status = 'completing'
+                    logger.info(f"🔄 [QC-API-DEBUG] Files finished and results validated - status: '{status}'")
                 elif completed > 0:
                     status = 'running'
                     logger.info(f"🔄 [QC-API-DEBUG] Files in progress - status: '{status}'")
@@ -91,6 +98,7 @@ def get_qc_progress(workbench_id):
             return jsonify({
                 'workbench_id': workbench_id,
                 'status': status,
+                'result_status': progress_data.get('result_status', 'processing') if progress_data else 'processing',
                 'progress_data': progress_data,
                 'last_updated': qc_step['updated_at']
             }), 200
@@ -125,6 +133,32 @@ def get_qc_results(workbench_id):
 
         # Get all QC results using the parser module
         results = get_all_qc_results(workbench_id)
+
+        # Preserve file-specific errors recorded by the execution plugin.
+        with get_db_connection() as conn:
+            qc_step = conn.execute('''
+                SELECT progress_detail
+                FROM pipeline_job_steps
+                WHERE workbench_id = ? AND step_name = 'qc'
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ''', (workbench_id,)).fetchone()
+        if qc_step and qc_step['progress_detail']:
+            try:
+                progress = json.loads(qc_step['progress_detail'])
+                plugin_errors = progress.get('errors', [])
+                if plugin_errors:
+                    combined_errors = plugin_errors + results.get('errors', [])
+                    unique_errors = []
+                    seen = set()
+                    for item in combined_errors:
+                        key = (item.get('report'), tuple(item.get('errors', [])))
+                        if key not in seen:
+                            seen.add(key)
+                            unique_errors.append(item)
+                    results['errors'] = unique_errors
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Failed to parse QC execution details for workbench {workbench_id}")
 
         logger.info(f"✅ [QC-RESULTS] Successfully fetched {results['total_count']} samples for workbench {workbench_id}")
 

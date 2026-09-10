@@ -10,12 +10,167 @@ import glob
 import logging
 import re
 import json
+import zipfile
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 
 # Configure logging
 from backend.utils.logger import setup_module_logger
 logger = setup_module_logger(__name__, 'INFO')
+
+FASTQC_DATA_NAME = 'fastqc_data.txt'
+FASTQC_REQUIRED_STATISTICS = {'Total Sequences', 'Sequence length'}
+FASTQC_REQUIRED_MODULE = 'Per base sequence quality'
+
+
+def _parse_fastqc_text(text: str) -> Dict[str, Any]:
+    """Parse FastQC text content into modules."""
+    modules = {}
+    current_module = None
+
+    for line in text.splitlines():
+        if line.startswith('>>'):
+            if line.startswith('>>END_MODULE'):
+                current_module = None
+            else:
+                parts = line[2:].split('\t')
+                current_module = parts[0]
+                modules[current_module] = {
+                    'status': parts[1] if len(parts) > 1 else 'unknown',
+                    'data': [],
+                    'headers': []
+                }
+        elif current_module and line.startswith('#'):
+            if line != '#' and '\t' in line:
+                modules[current_module]['headers'] = line[1:].split('\t')
+        elif current_module and line and not line.startswith('#'):
+            modules[current_module]['data'].append(line.split('\t'))
+
+    return modules
+
+
+def _read_fastqc_zip(zip_path: str) -> tuple[Optional[str], Optional[str]]:
+    """Read the single FastQC data member without extracting the archive."""
+    try:
+        if not zip_path or not os.path.isfile(zip_path) or os.path.getsize(zip_path) == 0:
+            return None, 'FastQC ZIP is missing or empty'
+        with zipfile.ZipFile(zip_path) as archive:
+            members = [
+                name for name in archive.namelist()
+                if not name.endswith('/') and Path(name).name == FASTQC_DATA_NAME
+            ]
+            if len(members) != 1:
+                return None, f'FastQC ZIP must contain exactly one {FASTQC_DATA_NAME}'
+            return archive.read(members[0]).decode('utf-8'), None
+    except (OSError, UnicodeDecodeError, zipfile.BadZipFile) as exc:
+        return None, f'Unable to read FastQC ZIP: {exc}'
+
+
+def _validate_fastqc_text(text: str) -> tuple[Dict[str, Any], List[str]]:
+    """Validate the FastQC content needed by the VizR parser and charts."""
+    errors = []
+    if not text.startswith('##FastQC'):
+        errors.append('FastQC header is missing')
+
+    modules = _parse_fastqc_text(text)
+    basic = modules.get('Basic Statistics')
+    if not basic:
+        errors.append('Basic Statistics module is missing')
+    else:
+        statistics = {row[0]: row[1] for row in basic.get('data', []) if len(row) >= 2}
+        missing_statistics = sorted(FASTQC_REQUIRED_STATISTICS - statistics.keys())
+        if missing_statistics:
+            errors.append(f"Required statistics missing: {', '.join(missing_statistics)}")
+        else:
+            try:
+                int(str(statistics['Total Sequences']).replace(',', ''))
+                [int(part) for part in str(statistics['Sequence length']).split('-')]
+            except (TypeError, ValueError):
+                errors.append('Required FastQC statistics are not numeric')
+
+    quality_module = modules.get(FASTQC_REQUIRED_MODULE)
+    if not quality_module or not quality_module.get('data'):
+        errors.append(f'{FASTQC_REQUIRED_MODULE} module is missing or empty')
+    else:
+        try:
+            first_row = quality_module['data'][0]
+            if len(first_row) < 2:
+                raise ValueError
+            float(first_row[1])
+        except (TypeError, ValueError, IndexError):
+            errors.append(f'{FASTQC_REQUIRED_MODULE} module is malformed')
+
+    return modules, errors
+
+
+def validate_fastqc_report(
+    data_path: Optional[str],
+    zip_path: Optional[str],
+    html_path: Optional[str],
+    recover: bool = False,
+) -> Dict[str, Any]:
+    """Validate that one FastQC report is usable by the VizR results UI."""
+    errors = []
+    warnings = []
+    recovered = False
+    source = None
+    text = None
+    modules = {}
+    extracted_errors = []
+
+    if not html_path or not os.path.isfile(html_path) or os.path.getsize(html_path) == 0:
+        errors.append('FastQC HTML report is missing or empty')
+
+    if data_path and os.path.isfile(data_path) and os.path.getsize(data_path) > 0:
+        try:
+            extracted_text = Path(data_path).read_text(encoding='utf-8')
+            extracted_modules, extracted_errors = _validate_fastqc_text(extracted_text)
+            if not extracted_errors:
+                text = extracted_text
+                modules = extracted_modules
+                source = 'extracted'
+        except (OSError, UnicodeDecodeError) as exc:
+            extracted_errors = [f'Unable to read extracted {FASTQC_DATA_NAME}: {exc}']
+
+    if text is None:
+        zip_text, zip_error = _read_fastqc_zip(zip_path)
+        if zip_error:
+            errors.append(zip_error)
+            errors.extend(extracted_errors)
+        elif zip_text is not None:
+            zip_modules, zip_validation_errors = _validate_fastqc_text(zip_text)
+            if zip_validation_errors:
+                errors.extend(zip_validation_errors)
+                errors.extend(extracted_errors)
+            else:
+                text = zip_text
+                modules = zip_modules
+                source = 'zip'
+                if extracted_errors:
+                    warnings.append(
+                        f"Extracted {FASTQC_DATA_NAME} was unusable; used ZIP instead: "
+                        + '; '.join(extracted_errors)
+                    )
+                if recover and data_path:
+                    try:
+                        Path(data_path).parent.mkdir(parents=True, exist_ok=True)
+                        Path(data_path).write_text(zip_text, encoding='utf-8')
+                        source = 'recovered'
+                        recovered = True
+                    except OSError as exc:
+                        warnings.append(f'Unable to recover {FASTQC_DATA_NAME}: {exc}')
+
+    return {
+        'valid': not errors,
+        'errors': errors,
+        'warnings': warnings,
+        'modules': modules,
+        'source': source,
+        'recovered': recovered,
+        'data_path': data_path,
+        'zip_path': zip_path,
+        'html_path': html_path,
+    }
 
 def get_workbench_path(workbench_id: int) -> str:
     """Get the workbench directory path using workbench schema (user-based path separation)"""
@@ -64,6 +219,36 @@ def collect_fastqc_files(workbench_id: int) -> List[str]:
         logger.error(f"Error collecting FastQC files for workbench {workbench_id}: {e}")
         return []
 
+
+def collect_fastqc_reports(workbench_id: int) -> List[Dict[str, Optional[str]]]:
+    """Collect extracted and ZIP-only FastQC reports without double counting."""
+    workbench_path = get_workbench_path(workbench_id)
+    root = os.path.join(workbench_path, 'quanti', 'qc', 'fastqc')
+    reports: Dict[str, Dict[str, Optional[str]]] = {}
+
+    for data_path in glob.glob(os.path.join(root, '**', FASTQC_DATA_NAME), recursive=True):
+        report_base = os.path.dirname(data_path)
+        reports.setdefault(report_base, {})['data_path'] = data_path
+
+    for zip_path in glob.glob(os.path.join(root, '**', '*_fastqc.zip'), recursive=True):
+        report_base = zip_path[:-4]
+        reports.setdefault(report_base, {})['zip_path'] = zip_path
+
+    for html_path in glob.glob(os.path.join(root, '**', '*_fastqc.html'), recursive=True):
+        report_base = html_path[:-5]
+        reports.setdefault(report_base, {})['html_path'] = html_path
+
+    collected = []
+    for report_base in sorted(reports):
+        report = reports[report_base]
+        collected.append({
+            'report_base': report_base,
+            'data_path': report.get('data_path') or os.path.join(report_base, FASTQC_DATA_NAME),
+            'zip_path': report.get('zip_path') or f'{report_base}.zip',
+            'html_path': report.get('html_path') or f'{report_base}.html',
+        })
+    return collected
+
 def parse_fastqc_file(file_path: str) -> Dict[str, Any]:
     """
     Parse a fastqc_data.txt file and extract structured data
@@ -74,40 +259,9 @@ def parse_fastqc_file(file_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing parsed modules with their status and data
     """
-    modules = {}
-    current_module = None
-
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.rstrip('\n')
-
-                if line.startswith('>>'):
-                    if line.startswith('>>END_MODULE'):
-                        current_module = None
-                    else:
-                        # Parse module header: >>Module Name\tstatus
-                        parts = line[2:].split('\t')  # Remove >> prefix
-                        module_name = parts[0]
-                        module_status = parts[1] if len(parts) > 1 else 'unknown'
-
-                        current_module = module_name
-                        modules[current_module] = {
-                            'status': module_status,
-                            'data': [],
-                            'headers': []
-                        }
-
-                elif current_module and line.startswith('#'):
-                    # Header line - extract column names
-                    if line != '#' and '\t' in line:
-                        headers = line[1:].split('\t')  # Remove # prefix
-                        modules[current_module]['headers'] = headers
-
-                elif current_module and line and not line.startswith('#'):
-                    # Data line
-                    modules[current_module]['data'].append(line.split('\t'))
-
+        text = Path(file_path).read_text(encoding='utf-8')
+        modules = _parse_fastqc_text(text)
         logger.debug(f"Successfully parsed {len(modules)} modules from {file_path}")
         return modules
 
@@ -505,7 +659,10 @@ def load_ai_analysis_result(file_path: str) -> Optional[Dict[str, Any]]:
         logger.warning(f"Could not load AI analysis for {file_path}: {e}")
         return None
 
-def process_fastqc_for_sample(file_path: str) -> Optional[Dict[str, Any]]:
+def process_fastqc_for_sample(
+    file_path: str,
+    validation: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     """
     Process a single FastQC file and return sample data
 
@@ -519,8 +676,8 @@ def process_fastqc_for_sample(file_path: str) -> Optional[Dict[str, Any]]:
         # Extract sample information from path
         sample_info = extract_sample_info_from_path(file_path)
 
-        # Parse FastQC data
-        parsed_data = parse_fastqc_file(file_path)
+        # Use the shared validation result so execution and display agree.
+        parsed_data = validation['modules'] if validation else parse_fastqc_file(file_path)
 
         if not parsed_data:
             logger.warning(f"No data parsed from {file_path}")
@@ -572,6 +729,26 @@ def process_fastqc_for_sample(file_path: str) -> Optional[Dict[str, Any]]:
         logger.error(f"Error processing FastQC file {file_path}: {e}")
         return None
 
+
+def _get_expected_qc_file_count(workbench_id: int) -> int:
+    """Read the latest expected file count while remaining compatible with old jobs."""
+    try:
+        from backend.utils.database import get_db_connection
+        with get_db_connection() as conn:
+            row = conn.execute('''
+                SELECT progress_detail
+                FROM pipeline_job_steps
+                WHERE workbench_id = ? AND step_name = 'qc'
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ''', (workbench_id,)).fetchone()
+        if row and row['progress_detail']:
+            progress = json.loads(row['progress_detail'])
+            return max(0, int(progress.get('total_files', 0)))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
+        logger.warning(f"Unable to determine expected QC file count for {workbench_id}: {exc}")
+    return 0
+
 def get_all_qc_results(workbench_id: int) -> Dict[str, Any]:
     """
     Get all QC results for a workbench
@@ -583,23 +760,50 @@ def get_all_qc_results(workbench_id: int) -> Dict[str, Any]:
         Dictionary containing workbench_id, samples list, and total count
     """
     try:
-        # Collect all FastQC files
-        fastqc_files = collect_fastqc_files(workbench_id)
+        reports = collect_fastqc_reports(workbench_id)
+        expected_count = _get_expected_qc_file_count(workbench_id) or len(reports)
 
-        if not fastqc_files:
+        if not reports:
             return {
                 'workbench_id': workbench_id,
                 'samples': [],
                 'total_count': 0,
-                'message': 'No FastQC results found'
+                'expected_count': expected_count,
+                'parsed_count': 0,
+                'failed_count': expected_count,
+                'result_status': 'unavailable',
+                'errors': [{'report': None, 'errors': ['No FastQC result artifacts were found']}],
+                'message': 'No displayable FastQC results found'
             }
 
         # Process each file
         samples = []
-        for file_path in fastqc_files:
-            sample = process_fastqc_for_sample(file_path)
+        validation_errors = []
+        for report in reports:
+            validation = validate_fastqc_report(
+                report['data_path'], report['zip_path'], report['html_path'], recover=False
+            )
+            if not validation['valid']:
+                validation_errors.append({
+                    'report': os.path.basename(report['report_base']),
+                    'errors': validation['errors'],
+                })
+                continue
+            sample = process_fastqc_for_sample(report['data_path'], validation)
             if sample:
                 samples.append(sample)
+            else:
+                validation_errors.append({
+                    'report': os.path.basename(report['report_base']),
+                    'errors': ['FastQC report could not be transformed for display'],
+                })
+
+        missing_count = max(expected_count - len(reports), 0)
+        if missing_count:
+            validation_errors.append({
+                'report': None,
+                'errors': [f'{missing_count} expected FastQC report(s) were not found'],
+            })
 
         # Sort samples by name (temporary, will re-sort after final name assignment)
         samples.sort(key=lambda x: x['name'])
@@ -653,13 +857,27 @@ def get_all_qc_results(workbench_id: int) -> Dict[str, Any]:
         # Calculate module-level statistics
         module_stats = calculate_module_level_statistics(samples)
 
+        parsed_count = len(samples)
+        failed_count = max(expected_count - parsed_count, len(validation_errors))
+        if parsed_count == 0:
+            result_status = 'unavailable'
+        elif failed_count > 0:
+            result_status = 'partial'
+        else:
+            result_status = 'ready'
+
         return {
             'workbench_id': workbench_id,
             'samples': samples,
-            'total_count': len(samples),
+            'total_count': parsed_count,
+            'expected_count': expected_count,
+            'parsed_count': parsed_count,
+            'failed_count': failed_count,
+            'result_status': result_status,
+            'errors': validation_errors,
             'sample_statistics': sample_stats,
             'module_statistics': module_stats,
-            'message': 'Success'
+            'message': 'Success' if result_status == 'ready' else 'Some FastQC results are unavailable'
         }
 
     except Exception as e:
@@ -668,5 +886,10 @@ def get_all_qc_results(workbench_id: int) -> Dict[str, Any]:
             'workbench_id': workbench_id,
             'samples': [],
             'total_count': 0,
+            'expected_count': 0,
+            'parsed_count': 0,
+            'failed_count': 0,
+            'result_status': 'unavailable',
+            'errors': [{'report': None, 'errors': [str(e)]}],
             'message': f'Error: {str(e)}'
         }
