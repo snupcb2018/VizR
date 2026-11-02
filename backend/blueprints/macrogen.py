@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, session
 import re
 import base64
 import binascii
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from backend.utils.logger import setup_module_logger
 logger = setup_module_logger(__name__, 'INFO')
@@ -15,6 +15,26 @@ logger = setup_module_logger(__name__, 'INFO')
 macrogen_bp = Blueprint('macrogen', __name__, url_prefix='/api/macrogen')
 
 MACROGEN_REPORT_REDIRECT_HOSTS = {'l.jumpto.es'}
+MACROGEN_REPORT_STORAGE_HOSTS = {'stratus-gds-apn2.s3.ap-northeast-2.amazonaws.com'}
+MAX_REPORT_REDIRECTS = 5
+
+
+def _is_macrogen_host(hostname: str) -> bool:
+    return hostname == 'macrogen.com' or hostname.endswith('.macrogen.com')
+
+
+def _is_allowed_report_destination(url: str, seen_macrogen: bool) -> bool:
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or '').lower()
+    if parsed.scheme not in ('http', 'https') or parsed.username or parsed.password:
+        return False
+    if _is_macrogen_host(hostname):
+        return _looks_like_zip_report_url(url)
+    if hostname in MACROGEN_REPORT_REDIRECT_HOSTS:
+        return True
+    if seen_macrogen and parsed.scheme == 'https' and hostname in MACROGEN_REPORT_STORAGE_HOSTS:
+        return parsed.path.lower().endswith('.zip') and 'X-Amz-Signature' in parse_qs(parsed.query)
+    return False
 
 
 def require_auth(f):
@@ -46,32 +66,52 @@ def fetch_macrogen_file_list():
         # URL validation: accept direct Macrogen links and known Macrogen redirect links.
         parsed_url = urlparse(report_url)
         hostname = (parsed_url.hostname or '').lower()
-        is_direct_macrogen_url = hostname.endswith('macrogen.com')
+        is_direct_macrogen_url = _is_macrogen_host(hostname)
         is_supported_redirect_url = hostname in MACROGEN_REPORT_REDIRECT_HOSTS
 
-        if not (is_direct_macrogen_url or is_supported_redirect_url):
+        if (parsed_url.scheme not in ('http', 'https') or parsed_url.username or parsed_url.password or
+                not (is_direct_macrogen_url or is_supported_redirect_url)):
             return jsonify({'error': 'URL must be from macrogen.com domain or a supported Macrogen redirect link'}), 400
         if is_direct_macrogen_url and not _looks_like_zip_report_url(report_url):
             return jsonify({'error': 'URL must point to a Macrogen report ZIP (direct or download query URL)'}), 400
 
-        # Download report ZIP.
+        # Follow only Macrogen report redirects and its signed report ZIP storage URL.
+        response = None
         try:
-            response = requests.get(report_url, timeout=120, stream=True)
-            response.raise_for_status()
-            final_url = response.url or report_url
-            final_hostname = (urlparse(final_url).hostname or '').lower()
-            if not final_hostname.endswith('macrogen.com'):
-                return jsonify({'error': 'Redirected URL must resolve to macrogen.com domain'}), 400
-            if not _looks_like_zip_report_url(final_url):
-                return jsonify({'error': 'Resolved URL must point to a Macrogen report ZIP'}), 400
+            current_url = report_url
+            seen_macrogen = is_direct_macrogen_url
+            for _ in range(MAX_REPORT_REDIRECTS + 1):
+                if not _is_allowed_report_destination(current_url, seen_macrogen):
+                    logger.warning('Rejected Macrogen report redirect to host: %s', urlparse(current_url).hostname)
+                    return jsonify({'error': 'Report redirected to an unsupported download location'}), 400
+
+                response = requests.get(current_url, timeout=120, stream=True, allow_redirects=False)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get('Location')
+                    response.close()
+                    response = None
+                    if not location:
+                        return jsonify({'error': 'Report redirect has no destination'}), 502
+                    seen_macrogen = seen_macrogen or _is_macrogen_host((urlparse(current_url).hostname or '').lower())
+                    current_url = urljoin(current_url, location)
+                    continue
+
+                response.raise_for_status()
+                if not _looks_like_zip_report_url(current_url):
+                    return jsonify({'error': 'Resolved URL must point to a Macrogen report ZIP'}), 400
+                zip_content = io.BytesIO(response.content)
+                break
+            else:
+                return jsonify({'error': 'Too many report redirects'}), 400
         except requests.Timeout:
             logger.error(f"Request timed out for URL: {report_url}")
             return jsonify({'error': 'Request timed out. Please check the URL and try again.'}), 408
         except requests.RequestException as e:
             logger.error(f"Failed to download ZIP from {report_url}: {e}")
-            return jsonify({'error': f'Failed to download report: {str(e)}'}), 500
-
-        zip_content = io.BytesIO(response.content)
+            return jsonify({'error': 'Failed to download report from Macrogen'}), 502
+        finally:
+            if response is not None:
+                response.close()
 
         try:
             with zipfile.ZipFile(zip_content, 'r') as zf:
